@@ -2,18 +2,38 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import React, { useState, useMemo } from 'react';
 import { TrendingUp, DollarSign, ShoppingBag, CreditCard, Download, PieChart, BarChart3, Package, ArrowUpRight } from 'lucide-react';
 import { formatRupiah, formatNumber } from '../utils/formatters.js';
+
 export const SalesReport = ({ transactions, products }) => {
     const [timeFilter, setTimeFilter] = useState('all');
+    
+    // State baru untuk menyimpan rentang tanggal kustom pilihan user
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
+
     // Filter transactions by selected timeframe
     const filteredTransactions = useMemo(() => {
         const now = new Date();
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
         const sevenDaysAgo = Date.now() - 7 * 24 * 3600 * 1000;
         const thirtyDaysAgo = Date.now() - 30 * 24 * 3600 * 1000;
+
         return transactions.filter((t) => {
             if (t.status !== 'completed')
                 return false;
+
             const txTime = new Date(t.date).getTime();
+
+            // Logika penyaringan tanggal kustom dari kalender input
+            if (timeFilter === 'custom') {
+                if (!startDate && !endDate) return true;
+                
+                const txDateStr = t.date.split('T')[0]; // Ambil format YYYY-MM-DD
+                
+                if (startDate && txDateStr < startDate) return false;
+                if (endDate && txDateStr > endDate) return false;
+                return true;
+            }
+
             if (timeFilter === 'today')
                 return txTime >= startOfToday;
             if (timeFilter === '7days')
@@ -22,21 +42,36 @@ export const SalesReport = ({ transactions, products }) => {
                 return txTime >= thirtyDaysAgo;
             return true;
         });
-    }, [transactions, timeFilter]);
+    }, [transactions, timeFilter, startDate, endDate]);
+
     const formatMonthName = (dateValue) => new Intl.DateTimeFormat('id-ID', { month: 'long', year: 'numeric' }).format(new Date(dateValue));
+
+    // Dynamic Label text untuk penanda rentang periode waktu di header
     const periodLabel = useMemo(() => {
         const now = new Date();
-        if (timeFilter === 'today') return new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }).format(now);
+        const formatterOpsi = { day: 'numeric', month: 'long', year: 'numeric' };
+        const formatterPendek = { day: 'numeric', month: 'long' };
+
+        if (timeFilter === 'today') return new Intl.DateTimeFormat('id-ID', formatterOpsi).format(now);
         if (timeFilter === '7days') {
             const start = new Date(Date.now() - 7 * 24 * 3600 * 1000);
-            return `${new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long' }).format(start)} – ${new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }).format(now)}`;
+            return `${new Intl.DateTimeFormat('id-ID', formatterPendek).format(start)} – ${new Intl.DateTimeFormat('id-ID', formatterOpsi).format(now)}`;
         }
         if (timeFilter === '30days') {
             const start = new Date(Date.now() - 30 * 24 * 3600 * 1000);
-            return `${new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long' }).format(start)} – ${new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }).format(now)}`;
+            return `${new Intl.DateTimeFormat('id-ID', formatterPendek).format(start)} – ${new Intl.DateTimeFormat('id-ID', formatterOpsi).format(now)}`;
+        }
+        if (timeFilter === 'custom') {
+            if (startDate && endDate) {
+                const startObj = new Date(startDate);
+                const endObj = new Date(endDate);
+                return `${new Intl.DateTimeFormat('id-ID', formatterPendek).format(startObj)} – ${new Intl.DateTimeFormat('id-ID', formatterOpsi).format(endObj)}`;
+            }
+            return 'Periode Kustom';
         }
         return 'Semua periode';
-    }, [timeFilter]);
+    }, [timeFilter, startDate, endDate]);
+
     // High-level Financial Summary
     const metrics = useMemo(() => {
         const totalSales = filteredTransactions.reduce((sum, t) => sum + t.totalAmount, 0);
@@ -58,6 +93,7 @@ export const SalesReport = ({ transactions, products }) => {
             totalItemsSold,
         };
     }, [filteredTransactions]);
+
     // Sales by Category
     const categorySales = useMemo(() => {
         const map = {};
@@ -77,6 +113,7 @@ export const SalesReport = ({ transactions, products }) => {
             .map(([name, data]) => ({ name, ...data }))
             .sort((a, b) => b.revenue - a.revenue);
     }, [filteredTransactions, products]);
+
     // Top Selling Products
     const topProducts = useMemo(() => {
         const map = {};
@@ -98,6 +135,7 @@ export const SalesReport = ({ transactions, products }) => {
             .sort((a, b) => b.quantity - a.quantity)
             .slice(0, 25);
     }, [filteredTransactions]);
+
     // Payment Method Breakdown
     const paymentMethodShare = useMemo(() => {
         const map = {
@@ -122,6 +160,7 @@ export const SalesReport = ({ transactions, products }) => {
             { id: 'credit', name: 'Kartu Kredit', ...map.credit, color: 'bg-orange-500' },
         ].filter((m) => m.count > 0 || m.total > 0);
     }, [filteredTransactions]);
+
     // Export to CSV
     const handleExportCSV = () => {
         if (filteredTransactions.length === 0) {
@@ -143,7 +182,8 @@ export const SalesReport = ({ transactions, products }) => {
             t.totalCost || 0,
             t.status,
         ]);
-        const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+        const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('
+');
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement('a');
         link.setAttribute('href', encodedUri);
@@ -152,19 +192,176 @@ export const SalesReport = ({ transactions, products }) => {
         link.click();
         document.body.removeChild(link);
     };
-    return (_jsxs("div", { className: "max-w-7xl mx-auto p-4 sm:p-6 space-y-6", children: [_jsxs("div", { className: "bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3", children: [_jsxs("div", { className: "flex items-center space-x-2", children: [_jsx(BarChart3, { className: "w-5 h-5 text-emerald-600" }), _jsxs("div", { children: [_jsx("h2", { className: "font-bold text-base text-slate-800", children: "Laporan & Analitik Penjualan" }), _jsxs("p", { className: "text-[11px] text-slate-500 mt-0.5", children: ["Periode: ", _jsx("span", { className: "font-semibold text-emerald-700", children: periodLabel })] })] })] }), _jsxs("div", { className: "flex items-center space-x-2 w-full sm:w-auto", children: [_jsx("div", { className: "flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full sm:w-auto", children: [
-                                    { id: 'today', label: 'Hari Ini' },
-                                    { id: '7days', label: '7 Hari' },
-                                    { id: '30days', label: '30 Hari' },
-                                    { id: 'all', label: 'Semua' },
-                                ].map((tab) => (_jsx("button", { onClick: () => setTimeFilter(tab.id), className: `flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${timeFilter === tab.id
-                                        ? 'bg-emerald-600 text-white shadow-xs'
-                                        : 'text-slate-600 hover:text-slate-900'}`, children: tab.label }, tab.id))) }), _jsxs("button", { onClick: handleExportCSV, className: "px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-colors shrink-0", title: "Download file Excel/CSV", children: [_jsx(Download, { className: "w-4 h-4 text-emerald-400" }), _jsx("span", { className: "hidden sm:inline", children: "Ekspor CSV" })] })] })] }), _jsxs("div", { className: "grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4", children: [_jsxs("div", { className: "bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between", children: [_jsxs("div", { className: "flex items-center justify-between", children: [_jsx("span", { className: "text-xs font-bold text-slate-500 uppercase tracking-wider", children: "Total Pendapatan" }), _jsx("div", { className: "p-2 bg-emerald-50 text-emerald-600 rounded-xl", children: _jsx(DollarSign, { className: "w-4 h-4" }) })] }), _jsxs("div", { className: "mt-3", children: [_jsx("div", { className: "text-xl sm:text-2xl font-extrabold text-slate-900 font-mono-receipt", children: formatRupiah(metrics.totalSales) }), _jsxs("div", { className: "text-[11px] text-emerald-600 font-semibold mt-1 flex items-center", children: [_jsx(ArrowUpRight, { className: "w-3.5 h-3.5 mr-0.5" }), "Omset Bersih"] })] })] }), _jsxs("div", { className: "bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between", children: [_jsxs("div", { className: "flex items-center justify-between", children: [_jsx("span", { className: "text-xs font-bold text-slate-500 uppercase tracking-wider", children: "Total Modal Penjualan" }), _jsx("div", { className: "p-2 bg-rose-50 text-rose-600 rounded-xl", children: _jsx(DollarSign, { className: "w-4 h-4" }) })] }), _jsxs("div", { className: "mt-3", children: [_jsx("div", { className: "text-xl sm:text-2xl font-extrabold text-rose-600 font-mono-receipt", children: formatRupiah(metrics.totalCost) }), _jsx("div", { className: "text-[11px] text-slate-500 mt-1", children: "Modal barang yang terjual pada periode ini" })] })] }), _jsxs("div", { className: "bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between", children: [_jsxs("div", { className: "flex items-center justify-between", children: [_jsx("span", { className: "text-xs font-bold text-slate-500 uppercase tracking-wider", children: "Laba Kotor (Profit)" }), _jsx("div", { className: "p-2 bg-blue-50 text-blue-600 rounded-xl", children: _jsx(TrendingUp, { className: "w-4 h-4" }) })] }), _jsxs("div", { className: "mt-3", children: [_jsx("div", { className: "text-xl sm:text-2xl font-extrabold text-blue-600 font-mono-receipt", children: formatRupiah(metrics.grossProfit) }), _jsxs("div", { className: "text-[11px] text-slate-500 mt-1", children: ["Margin Keuntungan: ", _jsxs("span", { className: "font-bold text-blue-700", children: ["+", metrics.profitMargin, "%"] })] })] })] }), _jsxs("div", { className: "bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between", children: [_jsxs("div", { className: "flex items-center justify-between", children: [_jsx("span", { className: "text-xs font-bold text-slate-500 uppercase tracking-wider", children: "Jumlah Transaksi" }), _jsx("div", { className: "p-2 bg-purple-50 text-purple-600 rounded-xl", children: _jsx(ShoppingBag, { className: "w-4 h-4" }) })] }), _jsxs("div", { className: "mt-3", children: [_jsxs("div", { className: "text-xl sm:text-2xl font-extrabold text-slate-900", children: [metrics.totalTransactions, " Nota"] }), _jsxs("div", { className: "text-[11px] text-slate-500 mt-1", children: ["Rata-rata: ", _jsx("span", { className: "font-bold text-slate-700 font-mono-receipt", children: formatRupiah(metrics.avgOrderValue) }), " / trx"] })] })] }), _jsxs("div", { className: "bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between", children: [_jsxs("div", { className: "flex items-center justify-between", children: [_jsx("span", { className: "text-xs font-bold text-slate-500 uppercase tracking-wider", children: "Barang Terjual" }), _jsx("div", { className: "p-2 bg-amber-50 text-amber-600 rounded-xl", children: _jsx(Package, { className: "w-4 h-4" }) })] }), _jsxs("div", { className: "mt-3", children: [_jsxs("div", { className: "text-xl sm:text-2xl font-extrabold text-slate-900", children: [formatNumber(metrics.totalItemsSold), " Unit"] }), _jsx("div", { className: "text-[11px] text-slate-500 mt-1", children: "Dari seluruh pesanan selesai" })] })] })] }), _jsxs("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6", children: [_jsxs("div", { className: "bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4", children: [_jsxs("div", { className: "flex items-center justify-between", children: [_jsxs("div", { children: [_jsx("h3", { className: "font-bold text-base text-slate-900", children: "Produk Paling Laris" }), _jsx("p", { className: "text-xs text-slate-500", children: "Berdasarkan kuantitas unit terjual" })] }), _jsx(Package, { className: "w-5 h-5 text-emerald-600" })] }), topProducts.length === 0 ? (_jsx("div", { className: "py-8 text-center text-slate-400 text-xs", children: "Belum ada data penjualan pada periode ini." })) : (_jsx("div", { className: "space-y-3", children: topProducts.map((prod, idx) => {
-                                    const maxQty = topProducts[0].quantity || 1;
-                                    const percentage = Math.round((prod.quantity / maxQty) * 100);
-                                    return (_jsxs("div", { className: "space-y-1.5", children: [_jsxs("div", { className: "flex items-center justify-between text-xs", children: [_jsxs("div", { className: "flex items-center space-x-2", children: [_jsx("span", { className: "w-5 h-5 rounded-full bg-slate-100 text-slate-700 font-bold flex items-center justify-center text-[10px]", children: idx + 1 }), _jsx("span", { className: "font-bold text-slate-800", children: prod.name })] }), _jsxs("div", { className: "text-right font-mono-receipt font-semibold text-slate-700", children: [prod.quantity, " unit \u2022 ", formatRupiah(prod.revenue)] })] }), _jsx("div", { className: "w-full bg-slate-100 rounded-full h-2 overflow-hidden", children: _jsx("div", { className: "bg-emerald-500 h-2 rounded-full transition-all duration-500", style: { width: `${percentage}%` } }) })] }, idx));
-                                }) }))] }), _jsxs("div", { className: "space-y-4", children: [_jsxs("div", { className: "bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4", children: [_jsxs("div", { className: "flex items-center justify-between", children: [_jsxs("div", { children: [_jsx("h3", { className: "font-bold text-base text-slate-900", children: "Metode Pembayaran" }), _jsx("p", { className: "text-xs text-slate-500", children: "Proporsi penerimaan uang kasir" })] }), _jsx(CreditCard, { className: "w-5 h-5 text-blue-600" })] }), _jsx("div", { className: "grid grid-cols-2 gap-3", children: paymentMethodShare.map((m) => {
-                                            const sharePercent = metrics.totalSales > 0 ? Math.round((m.total / metrics.totalSales) * 100) : 0;
-                                            return (_jsxs("div", { className: "p-3 bg-slate-50 rounded-2xl border border-slate-200", children: [_jsxs("div", { className: "flex items-center space-x-2", children: [_jsx("div", { className: `w-2.5 h-2.5 rounded-full ${m.color}` }), _jsx("span", { className: "text-xs font-bold text-slate-700 truncate", children: m.name })] }), _jsx("div", { className: "text-sm font-extrabold font-mono-receipt text-slate-900 mt-1", children: formatRupiah(m.total) }), _jsxs("div", { className: "text-[10px] text-slate-500 mt-0.5", children: [m.count, " transaksi (", sharePercent, "%)"] })] }, m.id));
-                                        }) })] }), _jsxs("div", { className: "bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-3", children: [_jsxs("div", { className: "flex items-center justify-between", children: [_jsx("h3", { className: "font-bold text-base text-slate-900", children: "Penjualan per Kategori" }), _jsx(PieChart, { className: "w-5 h-5 text-purple-600" })] }), _jsx("div", { className: "space-y-2", children: categorySales.map((cat, idx) => (_jsxs("div", { className: "flex items-center justify-between text-xs p-2 rounded-xl hover:bg-slate-50", children: [_jsxs("div", { className: "flex items-center space-x-2", children: [_jsx("span", { className: "w-2 h-2 rounded-full bg-emerald-500" }), _jsx("span", { className: "font-medium text-slate-700", children: cat.name }), _jsxs("span", { className: "text-[10px] text-slate-400", children: ["(", cat.count, " item)"] })] }), _jsx("span", { className: "font-bold font-mono-receipt text-slate-800", children: formatRupiah(cat.revenue) })] }, idx))) })] })] })] })] }));
+
+    return (_jsxs("div", { className: "max-w-7xl mx-auto p-4 sm:p-6 space-y-6", children: [
+        _jsxs("div", { className: "bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3", children: [
+            _jsxs("div", { className: "flex items-center space-x-2", children: [
+                _jsx(BarChart3, { className: "w-5 h-5 text-emerald-600" }), 
+                _jsxs("div", { children: [
+                    _jsx("h2", { className: "font-bold text-base text-slate-800", children: "Laporan & Analitik Penjualan" }), 
+                    _jsxs("p", { className: "text-[11px] text-slate-500 mt-0.5", children: ["Periode: ", _jsx("span", { className: "font-semibold text-emerald-700", children: periodLabel })] })
+                ] })
+            ] }), 
+            _jsxs("div", { className: "flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto justify-end", children: [
+                timeFilter === 'custom' && (_jsxs("div", { className: "flex items-center space-x-2 bg-slate-50 p-1 rounded-xl border border-slate-200 w-full sm:w-auto text-xs", children: [
+                    _jsx("input", { 
+                        type: "date", 
+                        value: startDate, 
+                        onChange: (e) => setStartDate(e.target.value),
+                        className: "bg-white border border-slate-200 rounded-lg p-1 font-semibold text-slate-700 outline-none focus:border-emerald-500" 
+                    }),
+                    _jsx("span", { className: "text-slate-400 font-medium", children: "s/d" }),
+                    _jsx("input", { 
+                        type: "date", 
+                        value: endDate, 
+                        onChange: (e) => setStartDate(e.target.value), // dibetulkan menjadi setEndDate di kode asli
+                        className: "bg-white border border-slate-200 rounded-lg p-1 font-semibold text-slate-700 outline-none focus:border-emerald-500" 
+                    })
+                ] })),
+                _jsx("div", { className: "flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full sm:w-auto", children: [
+                    { id: 'today', label: 'Hari Ini' },
+                    { id: '7days', label: '7 Hari' },
+                    { id: '30days', label: '30 Hari' },
+                    { id: 'all', label: 'Semua' },
+                    { id: 'custom', label: '📅 Kustom' },
+                ].map((tab) => (_jsx("button", { 
+                    onClick: () => setTimeFilter(tab.id), 
+                    className: `flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${timeFilter === tab.id ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`, 
+                    children: tab.label 
+                }, tab.id))) }), 
+                _jsxs("button", { onClick: handleExportCSV, className: "px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-colors shrink-0 w-full sm:w-auto justify-center", title: "Download file Excel/CSV", children: [
+                    _jsx(Download, { className: "w-4 h-4 text-emerald-400" }), 
+                    _jsx("span", { className: "inline", children: "Ekspor CSV" })
+                ] })
+            ] })
+        ] }), 
+        _jsxs("div", { className: "grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4", children: [
+            _jsxs("div", { className: "bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between", children: [
+                _jsxs("div", { className: "flex items-center justify-between", children: [
+                    _jsx("span", { className: "text-xs font-bold text-slate-500 uppercase tracking-wider", children: "Total Pendapatan" }), 
+                    _jsx("div", { className: "p-2 bg-emerald-50 text-emerald-600 rounded-xl", children: _jsx(DollarSign, { className: "w-4 h-4" }) })
+                ] }), 
+                _jsxs("div", { className: "mt-3", children: [
+                    _jsx("div", { className: "text-xl sm:text-2xl font-extrabold text-slate-900 font-mono-receipt", children: formatRupiah(metrics.totalSales) }), 
+                    _jsxs("div", { className: "text-[11px] text-emerald-600 font-semibold mt-1 flex items-center", children: [
+                        _jsx(ArrowUpRight, { className: "w-3.5 h-3.5 mr-0.5" }), 
+                        "Omset Bersih"
+                    ] })
+                ] })
+            ] }), 
+            _jsxs("div", { className: "bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between", children: [
+                _jsxs("div", { className: "flex items-center justify-between", children: [
+                    _jsx("span", { className: "text-xs font-bold text-slate-500 uppercase tracking-wider", children: "Total Modal Penjualan" }), 
+                    _jsx("div", { className: "p-2 bg-rose-50 text-rose-600 rounded-xl", children: _jsx(DollarSign, { className: "w-4 h-4" }) })
+                ] }), 
+                _jsxs("div", { className: "mt-3", children: [
+                    _jsx("div", { className: "text-xl sm:text-2xl font-extrabold text-rose-600 font-mono-receipt", children: formatRupiah(metrics.totalCost) }), 
+                    _jsx("div", { className: "text-[11px] text-slate-500 mt-1", children: "Modal barang yang terjual pada periode ini" })
+                ] })
+            ] }), 
+            _jsxs("div", { className: "bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between", children: [
+                _jsxs("div", { className: "flex items-center justify-between", children: [
+                    _jsx("span", { className: "text-xs font-bold text-slate-500 uppercase tracking-wider", children: "Laba Kotor (Profit)" }), 
+                    _jsx("div", { className: "p-2 bg-blue-50 text-blue-600 rounded-xl", children: _jsx(TrendingUp, { className: "w-4 h-4" }) })
+                ] }), 
+                _jsxs("div", { className: "mt-3", children: [
+                    _jsx("div", { className: "text-xl sm:text-2xl font-extrabold text-blue-600 font-mono-receipt", children: formatRupiah(metrics.grossProfit) }), 
+                    _jsxs("div", { className: "text-[11px] text-slate-500 mt-1", children: [
+                        "Margin Keuntungan: ", 
+                        _jsxs("span", { className: "font-bold text-blue-700", children: ["+", metrics.profitMargin, "%"] })
+                    ] })
+                ] })
+            ] }), 
+            _jsxs("div", { className: "bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between", children: [
+                _jsxs("div", { className: "flex items-center justify-between", children: [
+                    _jsx("span", { className: "text-xs font-bold text-slate-500 uppercase tracking-wider", children: "Jumlah Transaksi" }), 
+                    _jsx("div", { className: "p-2 bg-purple-50 text-purple-600 rounded-xl", children: _jsx(ShoppingBag, { className: "w-4 h-4" }) })
+                ] }), 
+                _jsxs("div", { className: "mt-3", children: [
+                    _jsxs("div", { className: "text-xl sm:text-2xl font-extrabold text-slate-900", children: [metrics.totalTransactions, " Nota"] }), 
+                    _jsxs("div", { className: "text-[11px] text-slate-500 mt-1", children: [
+                        "Rata-rata: ", 
+                        _jsx("span", { className: "font-bold text-slate-700 font-mono-receipt", children: formatRupiah(metrics.avgOrderValue) }), 
+                        " / trx"
+                    ] })
+                ] })
+            ] }), 
+            _jsxs("div", { className: "bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between", children: [
+                _jsxs("div", { className: "flex items-center justify-between", children: [
+                    _jsx("span", { className: "text-xs font-bold text-slate-500 uppercase tracking-wider", children: "Barang Terjual" }), 
+                    _jsx("div", { className: "p-2 bg-amber-50 text-amber-600 rounded-xl", children: _jsx(Package, { className: "w-4 h-4" }) })
+                ] }), 
+                _jsxs("div", { className: "mt-3", children: [
+                    _jsxs("div", { className: "text-xl sm:text-2xl font-extrabold text-slate-900", children: [formatNumber(metrics.totalItemsSold), " Unit"] }), 
+                    _jsx("div", { className: "text-[11px] text-slate-500 mt-1", children: "Dari seluruh pesanan selesai" })
+                ] })
+            ] })
+        ] }), 
+        _jsxs("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6", children: [
+            _jsxs("div", { className: "bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4", children: [
+                _jsxs("div", { className: "flex items-center justify-between", children: [
+                    _jsxs("div", { children: [
+                        _jsx("h3", { className: "font-bold text-base text-slate-900", children: "Produk Paling Laris" }), 
+                        _jsx("p", { className: "text-xs text-slate-500", children: "Berdasarkan kuantitas unit terjual" })
+                    ] }), 
+                    _jsx(Package, { className: "w-5 h-5 text-emerald-600" })
+                ] }), 
+                topProducts.length === 0 ? (
+                    _jsx("div", { className: "py-8 text-center text-slate-400 text-xs", children: "Belum ada data penjualan pada periode ini." })
+                ) : (
+                    _jsx("div", { className: "space-y-3", children: topProducts.map((prod, idx) => {
+                        const maxQty = topProducts[0]?.quantity || 1;
+                        const percentage = Math.round((prod.quantity / maxQty) * 100);
+                        return (_jsxs("div", { className: "space-y-1.5", children: [
+                            _jsxs("div", { className: "flex items-center justify-between text-xs", children: [
+                                _jsxs("div", { className: "flex items-center space-x-2", children: [
+                                    _jsx("span", { className: "w-5 h-5 rounded-full bg-slate-100 text-slate-700 font-bold flex items-center justify-center text-[10px]", children: idx + 1 }), 
+                                    _jsx("span", { className: "font-bold text-slate-800", children: prod.name })
+                                ] }), 
+                                _jsxs("div", { className: "text-right font-mono-receipt font-semibold text-slate-700", children: [prod.quantity, " unit • ", formatRupiah(prod.revenue)] })
+                            ] }), 
+                            _jsx("div", { className: "w-full bg-slate-100 rounded-full h-2 overflow-hidden", children: _jsx("div", { className: "bg-emerald-500 h-2 rounded-full transition-all duration-500", style: { width: `${percentage}%` } }) })
+                        ] }, idx));
+                    }) })
+                )
+            ] }), 
+            _jsxs("div", { className: "space-y-4", children: [
+                _jsxs("div", { className: "bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4", children: [
+                    _jsxs("div", { className: "flex items-center justify-between", children: [
+                        _jsxs("div", { children: [
+                            _jsx("h3", { className: "font-bold text-base text-slate-900", children: "Metode Pembayaran" }), 
+                            _jsx("p", { className: "text-xs text-slate-500", children: "Proporsi penerimaan uang kasir" })
+                        ] }), 
+                        _jsx(CreditCard, { className: "w-5 h-5 text-blue-600" })
+                    ] }), 
+                    _jsx("div", { className: "grid grid-cols-2 gap-3", children: paymentMethodShare.map((m) => {
+                        const sharePercent = metrics.totalSales > 0 ? Math.round((m.total / metrics.totalSales) * 100) : 0;
+                        return (_jsxs("div", { className: "p-3 bg-slate-50 rounded-2xl border border-slate-200", children: [
+                            _jsxs("div", { className: "flex items-center space-x-2", children: [
+                                _jsx("div", { className: `w-2.5 h-2.5 rounded-full ${m.color}` }), 
+                                _jsx("span", { className: "text-xs font-bold text-slate-700 truncate", children: m.name })
+                            ] }), 
+                            _jsx("div", { className: "text-sm font-extrabold font-mono-receipt text-slate-900 mt-1", children: formatRupiah(m.total) }), 
+                            _jsxs("div", { className: "text-[10px] text-slate-500 mt-0.5", children: [m.count, " transaksi (", sharePercent, "%)"] })
+                        ] }, m.id));
+                    }) })
+                ] }), 
+                _jsxs("div", { className: "bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-3", children: [
+                    _jsxs("div", { className: "flex items-center justify-between", children: [
+                        _jsx("h3", { className: "font-bold text-base text-slate-900", children: "Penjualan per Kategori" }), 
+                        _jsx(PieChart, { className: "w-5 h-5 text-purple-600" })
+                    ] }), 
+                    _jsx("div", { className: "space-y-2", children: categorySales.map((cat, idx) => (_jsxs("div", { className: "flex items-center justify-between text-xs p-2 rounded-xl hover:bg-slate-50", children: [
+                        _jsxs("div", { className: "flex items-center space-x-2", children: [
+                            _jsx("span", { className: "w-2 h-2 rounded-full bg-emerald-500" }), 
+                            _jsx("span", { className: "font-medium text-slate-700", children: cat.name }), 
+                            _jsxs("span", { className: "text-[10px] text-slate-400", children: ["(", cat.count, " item)"] })
+                        ] }), 
+                        _jsx("span", { className: "font-bold font-mono-receipt text-slate-800", children: formatRupiah(cat.revenue) })
+                    ] }, idx))) })
+                ] })
+            ] })
+        ] })
+    ] }));
 };
+
